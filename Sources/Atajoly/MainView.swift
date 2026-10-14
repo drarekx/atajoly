@@ -508,6 +508,7 @@ private struct BehaviourPane: View {
                     focusedCard
                     modifiersCard
                     switcherCard
+                    chooserCard
                     hideCard
                     windowsCard
                 }
@@ -584,6 +585,27 @@ private struct BehaviourPane: View {
                 }
                 SegmentedControl(options: SwitcherLayout.allCases.map { ($0.title, $0) },
                                  selection: $settings.switcherLayout, expand: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .atajolyCard()
+    }
+
+    private var chooserCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SwitchRow(title: tr("Elegir app al mantener la letra"),
+                      detail: tr("Si la letra tiene varias apps, muestra una lista para escoger con el teclado"),
+                      isOn: $settings.showChooser)
+            if settings.showChooser {
+                HStack {
+                    Text(tr("Esperar")).foregroundStyle(Theme.text2)
+                    Slider(value: $settings.chooserDelay, in: 0.2...2, step: 0.05)
+                    Text(String(format: "%.2f s", settings.chooserDelay)).monospacedText().foregroundStyle(Theme.text2)
+                        .frame(width: 56, alignment: .trailing)
+                }
+                Text(tr("La lista se queda abierta: la letra o las flechas para moverte, 1–9, ↩ o un clic para abrir, esc para cerrar."))
+                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

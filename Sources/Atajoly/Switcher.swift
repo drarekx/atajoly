@@ -26,6 +26,14 @@ final class Switcher: ObservableObject {
     private var monitors: [Any] = []
     private var deviceFlags: UInt = 0
     private var switcherTask: DispatchWorkItem?
+    /// Letter shared by several apps, held down: a tap when it goes up, the chooser if it stays.
+    private var heldKey: String?
+    private var holdTask: DispatchWorkItem?
+    /// Open chooser, the extra hot keys it registered (arrows, digits, return, escape…)
+    /// and the mouse monitor that closes it on a click elsewhere.
+    private var chooser: ChooserModel?
+    private var chooserHotkeys: [UInt32] = []
+    private var chooserMouseMonitor: Any?
 
     private var settings: Settings { .shared }
     private var catalog: AppCatalog { .shared }
@@ -78,11 +86,15 @@ final class Switcher: ObservableObject {
     private func arm() {
         let hotkeys = HotkeyCenter.shared
         hotkeys.unregisterAll()
+        cancelHold()
+        chooserHotkeys = []
         let base = triggerModifier
         let withShift = settings.enableCycleHotkey || settings.enableHideOthersHotkey
         for key in Keys.all where !settings.ignoredKeys.contains(key) {
             guard let code = KeyboardLayout.keyCode(for: key) else { continue }
-            hotkeys.register(keyCode: code, modifiers: base) { [weak self] in self?.pressed(key, shift: false) }
+            hotkeys.register(keyCode: code, modifiers: base, onRelease: { [weak self] in self?.released(key) }) { [weak self] in
+                self?.pressed(key, shift: false)
+            }
             if withShift {
                 hotkeys.register(keyCode: code, modifiers: base | UInt32(shiftKey)) { [weak self] in self?.pressed(key, shift: true) }
             }
@@ -95,8 +107,11 @@ final class Switcher: ObservableObject {
             hotkeys.register(keyCode: code, modifiers: base | UInt32(shiftKey)) { [weak self] in self?.hideOtherApps() }
         }
 
+        // The chooser stays open across trigger presses; its keys must come back.
+        if chooser != nil { registerChooserKeys() }
+
         switcherTask?.cancel()
-        if settings.showSwitcher {
+        if settings.showSwitcher, chooser == nil {
             let task = DispatchWorkItem { [weak self] in
                 guard let self, self.triggerHeld else { return }
                 SwitcherPanel.shared.show()
@@ -108,8 +123,19 @@ final class Switcher: ObservableObject {
 
     private func disarm() {
         HotkeyCenter.shared.unregisterAll()
+        chooserHotkeys = []
         switcherTask?.cancel()
-        SwitcherPanel.shared.hide()
+        if chooser != nil {
+            // Stays open after letting go of the trigger, until a pick or escape.
+            registerChooserKeys()
+        } else {
+            SwitcherPanel.shared.hide()
+        }
+        // Trigger let go before the letter: still a tap.
+        if let key = heldKey {
+            cancelHold()
+            focus(key: key, hideOthers: settings.alwaysHideOthers)
+        }
     }
 
     /// Re-register after settings change while the trigger is down (rare, but cheap).
@@ -120,14 +146,147 @@ final class Switcher: ObservableObject {
     // MARK: Actions
 
     private func pressed(_ key: String, shift: Bool) {
+        if let chooser {
+            if key == chooser.key {
+                moveChooser(shift ? -1 : 1)
+                return
+            }
+            if !shift, let number = Int(key), (1...min(chooser.apps.count, 9)).contains(number) {
+                chooser.selection = number - 1
+                confirmChooser()
+                return
+            }
+            closeChooser()
+        }
+        // Key repeat of the letter being held: keep waiting.
+        if heldKey == key { return }
+        // Another key while a letter is still down: that letter was a tap.
+        if let held = heldKey {
+            cancelHold()
+            focus(key: held, hideOthers: settings.alwaysHideOthers)
+        }
         switcherTask?.cancel()
         SwitcherPanel.shared.hide()
+        if !shift, settings.showChooser, catalog.candidates(for: key).count > 1 {
+            holdForChooser(key)
+            return
+        }
         let rightShift = shift && deviceFlags & DeviceFlags.rightShift != 0
         let leftShift = shift && !rightShift
         focus(key: key,
               forceCycle: rightShift && settings.enableCycleHotkey,
               hideOthers: settings.alwaysHideOthers || (leftShift && settings.enableHideOthersHotkey))
     }
+
+    // MARK: Chooser
+
+    /// Wait to see whether `key` is tapped (act on release) or held (open the chooser).
+    private func holdForChooser(_ key: String) {
+        heldKey = key
+        let task = DispatchWorkItem { [weak self] in
+            guard let self, self.heldKey == key else { return }
+            self.heldKey = nil
+            self.openChooser(for: key)
+        }
+        holdTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + settings.chooserDelay, execute: task)
+    }
+
+    private func released(_ key: String) {
+        guard heldKey == key else { return }
+        cancelHold()
+        focus(key: key, hideOthers: settings.alwaysHideOthers)
+    }
+
+    private func cancelHold() {
+        holdTask?.cancel()
+        holdTask = nil
+        heldKey = nil
+    }
+
+    private func openChooser(for key: String) {
+        let apps = catalog.candidates(for: key)
+        guard apps.count > 1 else {
+            focus(key: key, hideOthers: settings.alwaysHideOthers)
+            return
+        }
+        // Start on the app after the one in front, as ⌘⇥ does.
+        let frontID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let selection = apps.firstIndex { $0.bundleID == frontID }.map { ($0 + 1) % apps.count } ?? 0
+        let model = ChooserModel(key: key, apps: apps, selection: selection)
+        model.onPick = { [weak self] index in
+            self?.chooser?.selection = index
+            self?.confirmChooser()
+        }
+        chooser = model
+        registerChooserKeys()
+        chooserMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closeChooser() }
+        }
+        SwitcherPanel.shared.choose(model)
+    }
+
+    /// Keys that drive the open chooser, with and without the trigger held. Without it
+    /// they are plain keys, taken from every app until the chooser closes.
+    private func registerChooserKeys() {
+        guard let chooser else { return }
+        let hotkeys = HotkeyCenter.shared
+        hotkeys.unregister(chooserHotkeys)
+        chooserHotkeys = []
+
+        let keys: [(Int, () -> Void)] = [
+            (kVK_LeftArrow, { [weak self] in self?.moveChooser(-1) }),
+            (kVK_UpArrow, { [weak self] in self?.moveChooser(-1) }),
+            (kVK_RightArrow, { [weak self] in self?.moveChooser(1) }),
+            (kVK_DownArrow, { [weak self] in self?.moveChooser(1) }),
+            (kVK_Tab, { [weak self] in self?.moveChooser(1) }),
+            (kVK_Return, { [weak self] in self?.confirmChooser() }),
+            (kVK_ANSI_KeypadEnter, { [weak self] in self?.confirmChooser() }),
+            (kVK_Escape, { [weak self] in self?.closeChooser() }),
+        ]
+        for modifiers in [0, triggerModifier] {
+            chooserHotkeys += keys.compactMap { code, action in
+                hotkeys.register(keyCode: UInt32(code), modifiers: modifiers, action: action)
+            }
+        }
+        // With the trigger held, the letter and digits already reach `pressed`.
+        if let code = KeyboardLayout.keyCode(for: chooser.key) {
+            let next = hotkeys.register(keyCode: code, modifiers: 0) { [weak self] in self?.moveChooser(1) }
+            let back = hotkeys.register(keyCode: code, modifiers: UInt32(shiftKey)) { [weak self] in self?.moveChooser(-1) }
+            chooserHotkeys += [next, back].compactMap { $0 }
+        }
+        for number in 1...min(chooser.apps.count, 9) {
+            guard let code = KeyboardLayout.keyCode(for: String(number)) else { continue }
+            let id = hotkeys.register(keyCode: code, modifiers: 0) { [weak self] in
+                self?.chooser?.onPick?(number - 1)
+            }
+            if let id { chooserHotkeys.append(id) }
+        }
+    }
+
+    private func moveChooser(_ step: Int) {
+        guard let chooser else { return }
+        let count = chooser.apps.count
+        chooser.selection = ((chooser.selection + step) % count + count) % count
+    }
+
+    private func confirmChooser() {
+        guard let chooser else { return }
+        let app = chooser.apps[chooser.selection]
+        closeChooser()
+        open(app, hideOthers: settings.alwaysHideOthers)
+    }
+
+    private func closeChooser() {
+        HotkeyCenter.shared.unregister(chooserHotkeys)
+        chooserHotkeys = []
+        chooser = nil
+        if let chooserMouseMonitor { NSEvent.removeMonitor(chooserMouseMonitor) }
+        chooserMouseMonitor = nil
+        SwitcherPanel.shared.hide()
+    }
+
+    // MARK: Focus
 
     /// Focus the app behind `key`, or do its "already focused" action.
     func focus(key: String, forceCycle: Bool = false, hideOthers: Bool = false) {
@@ -218,6 +377,7 @@ final class Switcher: ObservableObject {
 
     private func assignFrontApp(to key: String) {
         switcherTask?.cancel()
+        if chooser != nil { closeChooser() }
         guard let front = NSWorkspace.shared.frontmostApplication,
               front.bundleIdentifier != Bundle.main.bundleIdentifier,
               let ref = AppRef(running: front) else {
@@ -235,12 +395,14 @@ final class Switcher: ObservableObject {
 
     private func hideFrontApp() {
         switcherTask?.cancel()
+        if chooser != nil { closeChooser() }
         SwitcherPanel.shared.hide()
         NSWorkspace.shared.frontmostApplication?.hide()
     }
 
     private func hideOtherApps() {
         switcherTask?.cancel()
+        if chooser != nil { closeChooser() }
         SwitcherPanel.shared.hide()
         guard let front = NSWorkspace.shared.frontmostApplication else { return }
         hideApps(except: front.processIdentifier)

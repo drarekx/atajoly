@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Floating overlay: the key map while the trigger is held, or a short
-/// confirmation after assigning a key. Never takes focus.
+/// Floating overlay: the key map while the trigger is held, the chooser for a
+/// letter shared by several apps, or a short confirmation after assigning a key.
+/// Never takes focus.
 @MainActor
 final class SwitcherPanel {
     static let shared = SwitcherPanel()
@@ -14,6 +15,11 @@ final class SwitcherPanel {
         let entries = SwitcherEntry.current()
         guard !entries.isEmpty else { return }
         present(AnyView(SwitcherView(entries: entries, layout: Settings.shared.switcherLayout)))
+    }
+
+    /// The only view that takes clicks: picking an app with the mouse.
+    func choose(_ model: ChooserModel) {
+        present(AnyView(ChooserView(model: model)), clickable: true)
     }
 
     func flash(key: String, app: AppRef, message: String) {
@@ -28,11 +34,12 @@ final class SwitcherPanel {
         panel?.orderOut(nil)
     }
 
-    private func present(_ view: AnyView) {
+    private func present(_ view: AnyView, clickable: Bool = false) {
         hideTask?.cancel()
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        let hosting = NSHostingView(rootView: view
+        panel.ignoresMouseEvents = !clickable
+        let hosting = FirstClickHostingView(rootView: view
             .environment(\.colorScheme, .dark)
             .id(Localizer.shared.language))
         panel.contentView = hosting
@@ -55,6 +62,27 @@ final class SwitcherPanel {
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         return panel
+    }
+}
+
+/// Hosting view that acts on the first click, though the panel never becomes key.
+private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// Apps behind one letter and the one picked so far.
+@MainActor
+final class ChooserModel: ObservableObject {
+    let key: String
+    let apps: [AppRef]
+    @Published var selection: Int
+    /// Opens the app at that index (click, digit).
+    var onPick: ((Int) -> Void)?
+
+    init(key: String, apps: [AppRef], selection: Int) {
+        self.key = key
+        self.apps = apps
+        self.selection = selection
     }
 }
 
@@ -154,6 +182,49 @@ struct KeyCap: View {
         .frame(minWidth: 22, minHeight: 20)
         .background(assigned ? Theme.accentSoft : Theme.control, in: RoundedRectangle(cornerRadius: 5))
         .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(assigned ? Theme.accentBorder : Theme.lineStrong) }
+    }
+}
+
+/// Row of apps like ⌘⇥, numbered so 1–9 picks one directly.
+private struct ChooserView: View {
+    @ObservedObject var model: ChooserModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                ForEach(model.apps.indices, id: \.self) { index in
+                    let app = model.apps[index]
+                    let selected = index == model.selection
+                    VStack(spacing: 6) {
+                        Image(nsImage: app.icon)
+                            .resizable()
+                            .frame(width: 64, height: 64)
+                            .opacity(AppCatalog.shared.runningApp(app.bundleID) != nil ? 1 : 0.55)
+                        KeyCap(key: index < 9 ? String(index + 1) : " ", assigned: selected)
+                            .opacity(index < 9 ? 1 : 0)
+                    }
+                    .padding(10)
+                    .background(selected ? Theme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? Theme.accentBorder : .clear)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.onPick?(index) }
+                }
+            }
+            HStack(spacing: 8) {
+                KeyCap(key: model.key)
+                Text(model.apps[model.selection].name).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+            }
+            Text(tr("← → o la letra para moverte · 1–9 o ↩ para abrir · esc para cerrar"))
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.text3)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .background(Theme.window.opacity(0.6), in: RoundedRectangle(cornerRadius: 18))
+        .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.lineStrong) }
+        .foregroundStyle(Theme.text)
     }
 }
 

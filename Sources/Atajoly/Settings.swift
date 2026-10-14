@@ -84,6 +84,10 @@ final class Settings: ObservableObject {
     @Published var showSwitcher: Bool { didSet { defaults.set(showSwitcher, forKey: "showSwitcher") } }
     /// Seconds the trigger must be held before the switcher appears.
     @Published var switcherDelay: Double { didSet { defaults.set(switcherDelay, forKey: "switcherDelay") } }
+    /// Holding a letter shared by several apps opens a chooser to pick one with the keyboard.
+    @Published var showChooser: Bool { didSet { defaults.set(showChooser, forKey: "showChooser") } }
+    /// Seconds the letter must be held before the chooser appears.
+    @Published var chooserDelay: Double { didSet { defaults.set(chooserDelay, forKey: "chooserDelay") } }
     @Published var switcherLayout: SwitcherLayout { didSet { defaults.set(switcherLayout.rawValue, forKey: "switcherLayout") } }
     @Published var hideMenuBarIcon: Bool { didSet { defaults.set(hideMenuBarIcon, forKey: "hideMenuBarIcon") } }
 
@@ -96,6 +100,8 @@ final class Settings: ObservableObject {
             "hideKey": "-",
             "showSwitcher": true,
             "switcherDelay": 0.4,
+            "showChooser": true,
+            "chooserDelay": 0.5,
         ])
         trigger = defaults.string(forKey: "trigger").flatMap(TriggerKey.init(rawValue:)) ?? .rightCommand
         paused = defaults.bool(forKey: "paused")
@@ -115,6 +121,8 @@ final class Settings: ObservableObject {
         hideKey = defaults.string(forKey: "hideKey") ?? "-"
         showSwitcher = defaults.bool(forKey: "showSwitcher")
         switcherDelay = defaults.double(forKey: "switcherDelay")
+        showChooser = defaults.bool(forKey: "showChooser")
+        chooserDelay = defaults.double(forKey: "chooserDelay")
         switcherLayout = defaults.string(forKey: "switcherLayout").flatMap(SwitcherLayout.init(rawValue:)) ?? .compact
         hideMenuBarIcon = defaults.bool(forKey: "hideMenuBarIcon")
     }
