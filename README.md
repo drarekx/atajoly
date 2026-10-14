@@ -31,6 +31,7 @@ Requisitos: macOS 14 (Sonoma) o posterior. Apple Silicon o Intel. Si usas rcmd, 
 - **Asignaciones a mano**: una tecla para una app concreta, aunque no esté abierta (se abre al pulsar). Cada una con su acción para cuando ya está delante.
 - **Teclado visual** con el icono de cada tecla, adaptado a tu distribución (QWERTY, AZERTY…). Desde ahí se asigna, se desactiva una tecla (para que ⌘ derecho + C siga copiando, por ejemplo) o se quita una app de las letras automáticas.
 - **Mapa de teclas** en pantalla al mantener ⌘ derecho, compacto o amplio.
+- **Elegir entre varias apps**: si una letra tiene varias apps, al mantenerla pulsada (tiempo ajustable) sale una lista como la de ⌘⇥. Se queda abierta aunque sueltes las teclas: la letra o las flechas para moverte, 1–9, ↩ o un clic para abrir, esc (o un clic fuera) para cerrar.
 - Se puede usar **⌥ derecho** en lugar de ⌘ derecho.
 - **Sin permisos** para cambiar de app. Solo «pasar a la siguiente ventana» pide Accesibilidad.
 - **Idiomas**: castellano, inglés y catalán.

@@ -8,6 +8,7 @@ final class HotkeyCenter {
 
     private var refs: [UInt32: EventHotKeyRef] = [:]
     private var actions: [UInt32: () -> Void] = [:]
+    private var releases: [UInt32: () -> Void] = [:]
     private var nextID: UInt32 = 1
     private var handlerInstalled = false
     /// "ATJY"
@@ -15,43 +16,60 @@ final class HotkeyCenter {
 
     private func installHandler() {
         guard !handlerInstalled else { return }
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var specs = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+                     EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))]
         let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
             var hotKey = EventHotKeyID()
             let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                                            nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKey)
             guard status == noErr, hotKey.signature == HotkeyCenter.signature else { return OSStatus(eventNotHandledErr) }
-            MainActor.assumeIsolated { HotkeyCenter.shared.fire(hotKey.id) }
+            let released = GetEventKind(event) == UInt32(kEventHotKeyReleased)
+            MainActor.assumeIsolated { HotkeyCenter.shared.fire(hotKey.id, released: released) }
             return noErr
-        }, 1, &spec, nil, nil)
+        }, specs.count, &specs, nil, nil)
         handlerInstalled = status == noErr
     }
 
-    /// Registers `keyCode` + Carbon `modifiers` (cmdKey, shiftKey…). Returns false if
-    /// another app already owns that combination.
+    /// Registers `keyCode` + Carbon `modifiers` (cmdKey, shiftKey…). Returns its ID, or nil
+    /// if another app already owns that combination. `onRelease` runs when the key goes up.
     @discardableResult
-    func register(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) -> Bool {
+    func register(keyCode: UInt32, modifiers: UInt32, onRelease: (() -> Void)? = nil,
+                  action: @escaping () -> Void) -> UInt32? {
         installHandler()
         let id = nextID
         nextID &+= 1
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(keyCode, modifiers, EventHotKeyID(signature: Self.signature, id: id),
                                          GetApplicationEventTarget(), 0, &ref)
-        guard status == noErr, let ref else { return false }
+        guard status == noErr, let ref else { return nil }
         refs[id] = ref
         actions[id] = action
-        return true
+        releases[id] = onRelease
+        return id
+    }
+
+    func unregister(_ ids: [UInt32]) {
+        for id in ids {
+            if let ref = refs.removeValue(forKey: id) { UnregisterEventHotKey(ref) }
+            actions[id] = nil
+            releases[id] = nil
+        }
     }
 
     func unregisterAll() {
         for ref in refs.values { UnregisterEventHotKey(ref) }
         refs.removeAll()
         actions.removeAll()
+        releases.removeAll()
     }
 
     var isEmpty: Bool { refs.isEmpty }
 
-    private func fire(_ id: UInt32) {
-        actions[id]?()
+    private func fire(_ id: UInt32, released: Bool) {
+        if released {
+            releases[id]?()
+        } else {
+            actions[id]?()
+        }
     }
 }

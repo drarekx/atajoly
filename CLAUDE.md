@@ -30,7 +30,7 @@ open build/Atajoly.app
 git tag v1.0.1 && git push origin v1.0.1
 ```
 
-`.github/workflows/release.yml` (macos-15) compila con `VERSION` = tag y crea el release con `Atajoly.zip` y `Atajoly.zip.sha256`. Las apps instaladas se actualizan solas (`Updater.swift`, consulta `releases/latest`). Instalador: `install.sh` (`curl … | bash`). Sin notarizar (firma ad-hoc). Última publicada: **v1.0.0** (2026-10-14).
+`.github/workflows/release.yml` (macos-15) compila con `VERSION` = tag y crea el release con `Atajoly.zip` y `Atajoly.zip.sha256`. Las apps instaladas se actualizan solas (`Updater.swift`, consulta `releases/latest`). Instalador: `install.sh` (`curl … | bash`). Sin notarizar (firma ad-hoc). Última publicada: **v1.1.0** (2026-10-14).
 
 ## Estructura (`Sources/Atajoly/`)
 
@@ -42,7 +42,7 @@ git tag v1.0.1 && git push origin v1.0.1
 | `KeyboardLayout.swift` | Carácter ↔ código de tecla según la distribución actual; filas físicas para el teclado visual |
 | `AppCatalog.swift` | `AppRef`, `StaticAssignment`, apps abiertas, uso (orden de las que comparten letra), apps instaladas, iconos |
 | `Windows.swift` | Accesibilidad (ciclar ventanas), Exposé (`CoreDockSendNotification` por `dlsym`), ventanas visibles por PID |
-| `SwitcherPanel.swift` | Panel flotante: mapa de teclas al mantener el modificador y aviso al asignar |
+| `SwitcherPanel.swift` | Panel flotante: mapa de teclas al mantener el modificador, selector de apps de una letra y aviso al asignar |
 | `MainView.swift` | Ventana: barra lateral, Teclado (mapa + inspector), Comportamiento, Ajustes |
 | `Settings.swift` | `UserDefaults` (`com.egluu.atajoly`) y login item (`SMAppService`) |
 | `Theme.swift` | Colores y controles (copia del de Wallpy con prefijo `Atajoly`) |
