@@ -17,9 +17,20 @@ open build/Atajoly.app
 - No hay tests. Verificar compilando (`swift build -c release --arch arm64 --arch x86_64`) y lanzando la app.
 - **No abrir dos copias ni tener rcmd abierto**: el primero que registra ⌘ + letra se la queda (`RegisterEventHotKey` falla en el otro).
 
-## GitHub
+## GitHub: ramas y protecciones
 
-Igual que Wallpy: `main` protegida, PR con squash y comprobación `build` (`.github/workflows/build.yml`: compila arm64 + x86_64 y verifica que `en` y `ca` tienen las mismas claves y que todo `tr()` está traducido). Versión: `git tag vX.Y.Z && git push origin vX.Y.Z` → `release.yml` publica `Atajoly.zip` + `.sha256`; `Updater.swift` actualiza las copias instaladas.
+- `main` está protegida (ruleset «Protect main», copiado de Wallpy): cambios por pull request con squash, comprobación `build` en verde (`.github/workflows/build.yml`: compila arm64 + x86_64 y verifica que `en` y `ca` tienen las mismas claves y que todo `tr()` está traducido), sin force-push ni borrado. El administrador puede saltárselo y empujar directo.
+- Flujo normal: rama `feat/…` o `fix/…` → `gh pr create` → esperar `build` → `gh pr merge --squash`. La rama se borra sola al fusionar.
+- Las etiquetas `v*` no se pueden borrar ni mover (ruleset «Protect version tags»): una versión publicada no se rehace; si sale mal, se publica la siguiente.
+- Dependabot abre PR semanales para las GitHub Actions.
+
+## Publicar una versión
+
+```sh
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+`.github/workflows/release.yml` (macos-15) compila con `VERSION` = tag y crea el release con `Atajoly.zip` y `Atajoly.zip.sha256`. Las apps instaladas se actualizan solas (`Updater.swift`, consulta `releases/latest`). Instalador: `install.sh` (`curl … | bash`). Sin notarizar (firma ad-hoc). Última publicada: **v1.0.0** (2026-10-14).
 
 ## Estructura (`Sources/Atajoly/`)
 
@@ -52,6 +63,7 @@ Igual que Wallpy: `main` protegida, PR con squash y comprobación `build` (`.git
 - Si la app no tiene ventanas visibles en el Space actual, se usa `NSWorkspace.openApplication` (equivale a pulsar en el Dock: desminimiza o abre ventana).
 - **Lado de la tecla**: ⌘ derecho = bit `0x10` de `modifierFlags.rawValue`, izquierdo `0x08`; ⇧ izq. `0x02`, der. `0x04`; ⌥ izq. `0x20`, der. `0x40`. Carbon no distingue lados: se mira `deviceFlags` al disparar.
 - En AZERTY los números no salen sin ⇧: `KeyboardLayout.keyCode(for:)` cae a la fila numérica ANSI.
+- **Tamaño de la ventana**: el panel Teclado necesita ~1380 px de ancho (barra 230 + teclado ~830 + inspector 320). Se abre a 1440×880, limitado a la pantalla; mínimo 1100×640. Si cambian esas medidas, recalcular.
 - Cada build ad-hoc cambia la firma: el permiso de Accesibilidad hay que volver a darlo tras recompilar.
 
 ## Pruebas manuales
