@@ -90,6 +90,9 @@ final class Settings: ObservableObject {
     @Published var chooserDelay: Double { didSet { defaults.set(chooserDelay, forKey: "chooserDelay") } }
     @Published var switcherLayout: SwitcherLayout { didSet { defaults.set(switcherLayout.rawValue, forKey: "switcherLayout") } }
     @Published var hideMenuBarIcon: Bool { didSet { defaults.set(hideMenuBarIcon, forKey: "hideMenuBarIcon") } }
+    /// Apps pinned to the top of the key map, opened with a click while the trigger is held.
+    @Published var favorites: [AppRef] { didSet { save(favorites, "favorites") } }
+    @Published var showFavorites: Bool { didSet { defaults.set(showFavorites, forKey: "showFavorites") } }
 
     private init() {
         defaults.register(defaults: [
@@ -102,6 +105,7 @@ final class Settings: ObservableObject {
             "switcherDelay": 0.4,
             "showChooser": true,
             "chooserDelay": 0.5,
+            "showFavorites": true,
         ])
         trigger = defaults.string(forKey: "trigger").flatMap(TriggerKey.init(rawValue:)) ?? .rightCommand
         paused = defaults.bool(forKey: "paused")
@@ -125,6 +129,9 @@ final class Settings: ObservableObject {
         chooserDelay = defaults.double(forKey: "chooserDelay")
         switcherLayout = defaults.string(forKey: "switcherLayout").flatMap(SwitcherLayout.init(rawValue:)) ?? .compact
         hideMenuBarIcon = defaults.bool(forKey: "hideMenuBarIcon")
+        favorites = defaults.data(forKey: "favorites")
+            .flatMap { try? JSONDecoder().decode([AppRef].self, from: $0) } ?? []
+        showFavorites = defaults.bool(forKey: "showFavorites")
     }
 
     /// Assign `app` to `key`, taking the key away from any other app first.
@@ -139,6 +146,20 @@ final class Settings: ObservableObject {
 
     func key(assignedTo bundleID: String) -> String? {
         assignments.values.first { $0.bundleID == bundleID }?.key
+    }
+
+    func addFavorite(_ app: AppRef) {
+        guard !favorites.contains(where: { $0.bundleID == app.bundleID }) else { return }
+        favorites.append(app)
+    }
+
+    func removeFavorite(_ bundleID: String) { favorites.removeAll { $0.bundleID == bundleID } }
+
+    /// Move the favorite at `index` one place left (-1) or right (+1).
+    func moveFavorite(at index: Int, by step: Int) {
+        let target = index + step
+        guard favorites.indices.contains(index), favorites.indices.contains(target) else { return }
+        favorites.swapAt(index, target)
     }
 
     private func save<T: Encodable>(_ value: T, _ key: String) {

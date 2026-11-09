@@ -204,6 +204,21 @@ private enum Translations {
         "El archivo descargado no coincide con su huella SHA-256. No se ha instalado nada.": "The downloaded file doesn't match its SHA-256 fingerprint. Nothing was installed.",
         "No se pudo descomprimir la actualización.": "Couldn't unzip the update.",
         "La descarga no contiene una versión válida de Atajoly.": "The download doesn't contain a valid version of Atajoly.",
+
+        // Favorites
+        "Favoritas": "Favorites",
+        "Mantén %@ y haz clic en una para abrirla.": "Hold %@ and click one to open it.",
+        "Añadir app…": "Add App…",
+        "Así se ven en el mapa de teclas": "How they look in the key map",
+        "Ninguna todavía. Añade las apps que más abres, aunque no estén abiertas.": "None yet. Add the apps you open most, even if they aren't running.",
+        "Orden": "Order",
+        "Usa «Añadir app…» arriba a la derecha.": "Use “Add App…” at the top right.",
+        "Mover antes": "Move earlier",
+        "Mover después": "Move later",
+        "Mostrar las favoritas en el mapa de teclas": "Show favorites in the key map",
+        "Una fila encima de las letras": "A row above the letters",
+        "El mapa de teclas está desactivado en Comportamiento: actívalo para ver las favoritas.": "The key map is off in Behaviour: turn it on to see your favorites.",
+        "En el mapa de teclas: abre la favorita o la app de esa tecla": "In the key map: opens that favorite or that key's app",
     ]
 
     static let ca: [String: String] = [
@@ -350,5 +365,20 @@ private enum Translations {
         "El archivo descargado no coincide con su huella SHA-256. No se ha instalado nada.": "El fitxer baixat no coincideix amb la seva empremta SHA-256. No s'ha instal·lat res.",
         "No se pudo descomprimir la actualización.": "No s'ha pogut descomprimir l'actualització.",
         "La descarga no contiene una versión válida de Atajoly.": "La baixada no conté una versió vàlida d'Atajoly.",
+
+        // Favorites
+        "Favoritas": "Preferides",
+        "Mantén %@ y haz clic en una para abrirla.": "Mantén %@ i fes clic en una per obrir-la.",
+        "Añadir app…": "Afegeix una app…",
+        "Así se ven en el mapa de teclas": "Així es veuen al mapa de tecles",
+        "Ninguna todavía. Añade las apps que más abres, aunque no estén abiertas.": "Cap encara. Afegeix les apps que més obres, encara que no estiguin obertes.",
+        "Orden": "Ordre",
+        "Usa «Añadir app…» arriba a la derecha.": "Fes servir «Afegeix una app…» a dalt a la dreta.",
+        "Mover antes": "Mou abans",
+        "Mover después": "Mou després",
+        "Mostrar las favoritas en el mapa de teclas": "Mostra les preferides al mapa de tecles",
+        "Una fila encima de las letras": "Una fila sobre les lletres",
+        "El mapa de teclas está desactivado en Comportamiento: actívalo para ver las favoritas.": "El mapa de tecles està desactivat a Comportament: activa'l per veure les preferides.",
+        "En el mapa de teclas: abre la favorita o la app de esa tecla": "Al mapa de tecles: obre la preferida o l'app d'aquesta tecla",
     ]
 }
