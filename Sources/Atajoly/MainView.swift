@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum MainSection: Hashable {
-    case keyboard, behaviour, settings
+    case keyboard, favorites, behaviour, settings
 }
 
 /// Main window: sidebar + the selected section, in Wallpy's dark style.
@@ -18,6 +18,7 @@ struct MainView: View {
             Group {
                 switch section {
                 case .keyboard: KeyboardPane()
+                case .favorites: FavoritesPane()
                 case .behaviour: BehaviourPane()
                 case .settings: SettingsPane()
                 }
@@ -56,6 +57,7 @@ private struct Sidebar: View {
 
             VStack(spacing: 2) {
                 navItem(tr("Teclado"), "keyboard", .keyboard, count: settings.assignments.count)
+                navItem(tr("Favoritas"), "star", .favorites, count: settings.favorites.count)
                 navItem(tr("Comportamiento"), "arrow.triangle.branch", .behaviour, count: nil)
                 navItem(tr("Ajustes"), "slider.horizontal.3", .settings, count: nil)
             }
@@ -427,6 +429,110 @@ private struct KeyInspector: View {
     }
 }
 
+// MARK: - Favorites
+
+/// Apps pinned to the top of the overlay, in the order shown there.
+private struct FavoritesPane: View {
+    @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var catalog = AppCatalog.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PaneHeader(title: tr("Favoritas"),
+                       subtitle: tr("Mantén %@ y haz clic en una para abrirla.", settings.trigger.title)) {
+                AppChooser(title: tr("Añadir app…")) { settings.addFavorite($0) }
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    preview
+                    listCard
+                    optionsCard
+                }
+                .padding(24)
+                .frame(maxWidth: 900, alignment: .leading)
+            }
+        }
+    }
+
+    /// How the row looks in the overlay.
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionLabel(tr("Así se ven en el mapa de teclas"))
+            if settings.favorites.isEmpty {
+                Text(tr("Ninguna todavía. Añade las apps que más abres, aunque no estén abiertas."))
+                    .foregroundStyle(Theme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(settings.favorites, id: \.bundleID) { app in
+                            VStack(spacing: 4) {
+                                Image(nsImage: app.icon).resizable().frame(width: 48, height: 48)
+                                Text(app.name).font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(Theme.text2).lineLimit(1)
+                                Circle().fill(catalog.runningApp(app.bundleID) != nil ? Theme.text2 : .clear)
+                                    .frame(width: 4, height: 4)
+                            }
+                            .frame(width: 64)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .atajolyCard(padding: 16)
+    }
+
+    private var listCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(tr("Orden")).font(.system(size: 14, weight: .semibold))
+            if settings.favorites.isEmpty {
+                Text(tr("Usa «Añadir app…» arriba a la derecha.")).foregroundStyle(Theme.text3)
+            }
+            ForEach(Array(settings.favorites.enumerated()), id: \.element.bundleID) { index, app in
+                HStack(spacing: 10) {
+                    Image(nsImage: app.icon).resizable().frame(width: 24, height: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(app.name).lineLimit(1)
+                        Text(catalog.runningApp(app.bundleID) != nil ? tr("Abierta") : tr("Se abrirá al pulsar"))
+                            .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    }
+                    Spacer()
+                    if let key = settings.key(assignedTo: app.bundleID) {
+                        KeyCap(key: key, assigned: true)
+                    }
+                    IconButton(symbol: "chevron.left", label: tr("Mover antes")) {
+                        settings.moveFavorite(at: index, by: -1)
+                    }
+                    .disabled(index == 0)
+                    IconButton(symbol: "chevron.right", label: tr("Mover después")) {
+                        settings.moveFavorite(at: index, by: 1)
+                    }
+                    .disabled(index == settings.favorites.count - 1)
+                    IconButton(symbol: "xmark", label: tr("Quitar")) { settings.removeFavorite(app.bundleID) }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .atajolyCard()
+    }
+
+    private var optionsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SwitchRow(title: tr("Mostrar las favoritas en el mapa de teclas"),
+                      detail: tr("Una fila encima de las letras"), isOn: $settings.showFavorites)
+            if !settings.showSwitcher {
+                Text(tr("El mapa de teclas está desactivado en Comportamiento: actívalo para ver las favoritas."))
+                    .font(.system(size: 11)).foregroundStyle(Theme.warn)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .atajolyCard()
+    }
+}
+
 /// Menu with the installed apps, plus a file picker for anything else.
 private struct AppChooser: View {
     let title: String
@@ -733,6 +839,7 @@ private struct SettingsPane: View {
             ("\(t) ⇧ + A", tr("⇧ izquierdo: abre y oculta las demás · ⇧ derecho: siguiente app")),
             ("\(t) \(Switcher.shared.assignModifierSymbol) + A", tr("Asigna la A a la app activa")),
             ("\(t) + −", tr("Oculta la app activa")),
+            ("\(t) + clic", tr("En el mapa de teclas: abre la favorita o la app de esa tecla")),
         ]
         return VStack(alignment: .leading, spacing: 10) {
             Text(tr("Cómo se usa")).font(.system(size: 14, weight: .semibold))

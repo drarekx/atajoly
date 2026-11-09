@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Floating overlay: the key map while the trigger is held, the chooser for a
+/// Floating overlay: the favorites and key map while the trigger is held, the chooser for a
 /// letter shared by several apps, or a short confirmation after assigning a key.
-/// Never takes focus.
+/// Never takes focus, but the map and the chooser take clicks.
 @MainActor
 final class SwitcherPanel {
     static let shared = SwitcherPanel()
@@ -11,10 +11,22 @@ final class SwitcherPanel {
     private var panel: NSPanel?
     private var hideTask: DispatchWorkItem?
 
+    /// Key map with the favorites on top. Clickable: a click opens that app.
     func show() {
+        let settings = Settings.shared
         let entries = SwitcherEntry.current()
-        guard !entries.isEmpty else { return }
-        present(AnyView(SwitcherView(entries: entries, layout: Settings.shared.switcherLayout)))
+        let favorites = settings.showFavorites ? settings.favorites : []
+        guard !entries.isEmpty || !favorites.isEmpty else { return }
+        let view = SwitcherView(entries: entries, favorites: favorites, layout: settings.switcherLayout,
+                                onOpen: { [weak self] app in
+                                    self?.hide()
+                                    Switcher.shared.open(app, hideOthers: settings.alwaysHideOthers)
+                                },
+                                onKey: { [weak self] key in
+                                    self?.hide()
+                                    Switcher.shared.focus(key: key, hideOthers: settings.alwaysHideOthers)
+                                })
+        present(AnyView(view), clickable: true)
     }
 
     /// The only view that takes clicks: picking an app with the mouse.
@@ -110,13 +122,22 @@ struct SwitcherEntry: Identifiable {
 
 private struct SwitcherView: View {
     let entries: [SwitcherEntry]
+    let favorites: [AppRef]
     let layout: SwitcherLayout
+    let onOpen: (AppRef) -> Void
+    let onKey: (String) -> Void
 
     var body: some View {
-        Group {
-            switch layout {
-            case .compact: compact
-            case .comfortable: comfortable
+        VStack(spacing: 14) {
+            if !favorites.isEmpty {
+                favoritesRow
+                if !entries.isEmpty { Rectangle().fill(Theme.lineStrong).frame(height: 1) }
+            }
+            if !entries.isEmpty {
+                switch layout {
+                case .compact: compact
+                case .comfortable: comfortable
+                }
             }
         }
         .padding(16)
@@ -126,18 +147,45 @@ private struct SwitcherView: View {
         .foregroundStyle(Theme.text)
     }
 
+    /// Dock-like row: icon, name, and a dot under the apps that are running.
+    private var favoritesRow: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ForEach(favorites, id: \.bundleID) { app in
+                let running = AppCatalog.shared.runningApp(app.bundleID) != nil
+                Button { onOpen(app) } label: {
+                    VStack(spacing: 4) {
+                        Image(nsImage: app.icon).resizable().frame(width: 48, height: 48)
+                        Text(app.name)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Theme.text2)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Circle().fill(running ? Theme.text2 : .clear).frame(width: 4, height: 4)
+                    }
+                    .frame(width: 64)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressableStyle())
+            }
+        }
+    }
+
     private var compact: some View {
         let columns = Array(repeating: GridItem(.fixed(64), spacing: 8), count: min(entries.count, 10))
         return LazyVGrid(columns: columns, spacing: 8) {
             ForEach(entries) { entry in
-                VStack(spacing: 4) {
-                    Image(nsImage: entry.apps[0].icon)
-                        .resizable()
-                        .frame(width: 40, height: 40)
-                        .opacity(entry.running ? 1 : 0.55)
-                    KeyCap(key: entry.key, assigned: entry.assigned, extra: entry.apps.count - 1)
+                Button { onKey(entry.key) } label: {
+                    VStack(spacing: 4) {
+                        Image(nsImage: entry.apps[0].icon)
+                            .resizable()
+                            .frame(width: 40, height: 40)
+                            .opacity(entry.running ? 1 : 0.55)
+                        KeyCap(key: entry.key, assigned: entry.assigned, extra: entry.apps.count - 1)
+                    }
+                    .frame(width: 64)
+                    .contentShape(Rectangle())
                 }
-                .frame(width: 64)
+                .buttonStyle(PressableStyle())
             }
         }
     }
@@ -149,19 +197,30 @@ private struct SwitcherView: View {
             ForEach(columns.indices, id: \.self) { column in
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(columns[column]) { entry in
-                        HStack(spacing: 10) {
-                            KeyCap(key: entry.key, assigned: entry.assigned, extra: 0)
-                            Image(nsImage: entry.apps[0].icon).resizable().frame(width: 24, height: 24)
-                            Text(entry.apps.map(\.name).joined(separator: " · "))
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(entry.running ? Theme.text : Theme.text2)
-                                .lineLimit(1)
+                        Button { onKey(entry.key) } label: {
+                            HStack(spacing: 10) {
+                                KeyCap(key: entry.key, assigned: entry.assigned, extra: 0)
+                                Image(nsImage: entry.apps[0].icon).resizable().frame(width: 24, height: 24)
+                                Text(entry.apps.map(\.name).joined(separator: " · "))
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(entry.running ? Theme.text : Theme.text2)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 280, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
-                        .frame(width: 280, alignment: .leading)
+                        .buttonStyle(PressableStyle())
                     }
                 }
             }
         }
+    }
+}
+
+/// Plain button that dims while pressed (the overlay never becomes key, so no focus ring).
+private struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.6 : 1)
     }
 }
 

@@ -30,7 +30,7 @@ open build/Atajoly.app
 git tag v1.0.1 && git push origin v1.0.1
 ```
 
-`.github/workflows/release.yml` (macos-15) compila con `VERSION` = tag y crea el release con `Atajoly.zip` y `Atajoly.zip.sha256`. Las apps instaladas se actualizan solas (`Updater.swift`, consulta `releases/latest`). Instalador: `install.sh` (`curl … | bash`). Sin notarizar (firma ad-hoc). Última publicada: **v1.1.0** (2026-10-14).
+`.github/workflows/release.yml` (macos-15) compila con `VERSION` = tag y crea el release con `Atajoly.zip` y `Atajoly.zip.sha256`. Las apps instaladas se actualizan solas (`Updater.swift`, consulta `releases/latest`). Instalador: `install.sh` (`curl … | bash`). Sin notarizar (firma ad-hoc). Última publicada: **v1.2.0** (2026-11-09).
 
 ## Estructura (`Sources/Atajoly/`)
 
