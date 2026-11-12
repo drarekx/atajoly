@@ -5,8 +5,9 @@ import SwiftUI
 /// letter shared by several apps, or a short confirmation after assigning a key.
 /// Never takes focus, but the map and the chooser take clicks.
 ///
-/// It comes and goes through a short fog transition. The window is larger than the card by
-/// `Fog.margin` on every side so the mist has room; the card stays centred where it always was.
+/// It comes and goes through a short transition: the card fades, sharpens and settles into place.
+/// The window is larger than the card by `Fog.margin` on every side so its shadow has room; the
+/// card stays centred where it always was.
 @MainActor
 final class SwitcherPanel {
     static let shared = SwitcherPanel()
@@ -147,31 +148,14 @@ final class SwitcherPanel {
 // MARK: - Fog transition
 
 private enum Fog {
-    /// Transparent room around the card for the mist and the card's shadow.
-    static let margin: CGFloat = 56
-    static let appear = 0.22
-    static let disappear = 0.18
+    /// Transparent room around the card for its shadow and for the blur while it comes and goes.
+    static let margin: CGFloat = 48
+    /// The card is readable almost at once; the rest is it sharpening and settling.
+    static let appear = 0.50
+    static let disappear = 0.35
     /// Reduce Motion: a plain quick fade.
     static let plainAppear = 0.10
     static let plainDisappear = 0.08
-
-    /// Stable pseudo-random value in 0..<1, so the mist keeps its shape from frame to frame.
-    static func noise(_ index: Int, _ salt: Int) -> Double {
-        let value = sin(Double(index) * 12.9898 + Double(salt) * 78.233) * 43758.5453
-        return value - value.rounded(.down)
-    }
-
-    /// Point on the edge of `rect`, `fraction` (0..<1) of the way around it.
-    static func point(on rect: CGRect, at fraction: Double) -> CGPoint {
-        var distance = fraction * 2 * (rect.width + rect.height)
-        if distance < rect.width { return CGPoint(x: rect.minX + distance, y: rect.minY) }
-        distance -= rect.width
-        if distance < rect.height { return CGPoint(x: rect.maxX, y: rect.minY + distance) }
-        distance -= rect.height
-        if distance < rect.width { return CGPoint(x: rect.maxX - distance, y: rect.maxY) }
-        distance -= rect.width
-        return CGPoint(x: rect.minX, y: rect.maxY - distance)
-    }
 }
 
 /// What the overlay shows. Kept apart from the clock so a frame of the transition
@@ -187,7 +171,7 @@ private final class FogStage: ObservableObject {
 @MainActor
 private final class FogClock: ObservableObject {
     @Published private(set) var progress = 0.0
-    /// Reduce Motion: fade only, no mist, blur or scale.
+    /// Reduce Motion: fade only, no blur or scale.
     @Published private(set) var plain = false
 
     private var timer: Timer?
@@ -235,14 +219,13 @@ private final class FogClock: ObservableObject {
     }
 }
 
-/// Mist behind and around the card, the card itself centred on top.
+/// The card, centred in the window.
 private struct FogRoot: View {
     @ObservedObject var stage: FogStage
     let clock: FogClock
 
     var body: some View {
         ZStack {
-            Mist(clock: clock)
             stage.content.modifier(FogEmerge(clock: clock))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -257,53 +240,12 @@ private struct FogEmerge: ViewModifier {
     func body(content: Content) -> some View {
         let progress = clock.progress
         content
-            .opacity(clock.plain ? progress : min(1, progress * 1.4))
+            .opacity(clock.plain ? progress : min(1, progress * 2))
             .scaleEffect(clock.plain ? 1 : 0.975 + 0.025 * progress)
     }
 }
 
-/// Soft puffs along the card's edge. Densest early in the timeline and gone at both ends, and
-/// further out the lower the progress: appearing, they gather inwards and clear; dissolving,
-/// they rise as the card fades, drift outwards and thin out.
-private struct Mist: View {
-    @ObservedObject var clock: FogClock
-
-    var body: some View {
-        let progress = clock.progress
-        if clock.plain || progress <= 0 || progress >= 1 {
-            Color.clear
-        } else {
-            Canvas { context, size in
-                let card = CGRect(origin: .zero, size: size).insetBy(dx: Fog.margin, dy: Fog.margin)
-                guard card.width > 0, card.height > 0 else { return }
-                let density = sin(.pi * pow(progress, 0.6))
-                let away = 1 - progress
-                let count = max(10, min(32, Int((card.width + card.height) / 28)))
-                for index in 0..<count {
-                    let a = Fog.noise(index, 1), b = Fog.noise(index, 2), c = Fog.noise(index, 3)
-                    let edge = Fog.point(on: card, at: (Double(index) + a * 0.6) / Double(count))
-                    let dx = edge.x - card.midX, dy = edge.y - card.midY
-                    let length = max(1, hypot(dx, dy))
-                    let drift = away * (6 + 10 * b)
-                    let width = 36 + 24 * b, height = 26 + 16 * c
-                    let puff = CGRect(x: edge.x + dx / length * drift - width / 2,
-                                      y: edge.y + dy / length * drift - away * 4 * c - height / 2,
-                                      width: width, height: height)
-                    // Mostly the card's own substance, with a few wisps of the text colour so the
-                    // mist shows against the desktop whether the palette is dark or light.
-                    let wisp = index % 3 == 0
-                    let tint = wisp ? Theme.text : Theme.window
-                    let alpha = density * (wisp ? 0.14 + 0.10 * a : 0.38 + 0.22 * a)
-                    context.fill(Path(ellipseIn: puff), with: .color(tint.opacity(alpha)))
-                }
-            }
-            .blur(radius: 10)
-            .allowsHitTesting(false)
-        }
-    }
-}
-
-/// Shared look of the overlay cards. The content inside sharpens as the fog clears; the
+/// Shared look of the overlay cards. The content inside sharpens as the card comes in; the
 /// material behind it is left unfiltered and only fades with the card.
 private struct FogCard: ViewModifier {
     let radius: CGFloat
@@ -312,7 +254,7 @@ private struct FogCard: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius)
         content
-            .blur(radius: clock.plain ? 0 : (1 - clock.progress) * 6)
+            .blur(radius: clock.plain ? 0 : (1 - clock.progress) * 10)
             .background(.ultraThinMaterial, in: shape)
             .background(Theme.window.opacity(0.6), in: shape)
             .overlay { shape.strokeBorder(Theme.lineStrong) }
