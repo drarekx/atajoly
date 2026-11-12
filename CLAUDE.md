@@ -30,7 +30,7 @@ open build/Atajoly.app
 git tag v1.0.1 && git push origin v1.0.1
 ```
 
-`.github/workflows/release.yml` (macos-15) compila con `VERSION` = tag y crea el release con `Atajoly.zip` y `Atajoly.zip.sha256`. Las apps instaladas se actualizan solas (`Updater.swift`, consulta `releases/latest`). Instalador: `install.sh` (`curl … | bash`). Sin notarizar (firma ad-hoc). Última publicada: **v1.2.0** (2026-11-09).
+`.github/workflows/release.yml` (macos-15) compila con `VERSION` = tag y crea el release con `Atajoly.zip` y `Atajoly.zip.sha256`. Las apps instaladas se actualizan solas (`Updater.swift`, consulta `releases/latest`). Instalador: `install.sh` (`curl … | bash`). Sin notarizar (firma ad-hoc). Última publicada: **v1.3.0** (2026-11-12).
 
 ## Estructura (`Sources/Atajoly/`)
 
@@ -45,7 +45,7 @@ git tag v1.0.1 && git push origin v1.0.1
 | `SwitcherPanel.swift` | Panel flotante: mapa de teclas al mantener el modificador, selector de apps de una letra y aviso al asignar |
 | `MainView.swift` | Ventana: barra lateral, Teclado (mapa + inspector), Comportamiento, Ajustes |
 | `Settings.swift` | `UserDefaults` (`com.egluu.atajoly`) y login item (`SMAppService`) |
-| `Theme.swift` | Colores y controles (copia del de Wallpy con prefijo `Atajoly`) |
+| `Theme.swift` | Paletas (`ThemePalette`, `ThemeID`: Atajoly, Solarized, Dracula, Nord…), colores de la paleta activa y controles (copia del de Wallpy con prefijo `Atajoly`) |
 | `Updater.swift` | Autoactualización desde GitHub Releases con SHA-256 |
 | `Localization.swift` | Idiomas (en, es, ca): `tr()`, `Localizer`, tablas |
 

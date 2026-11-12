@@ -6,10 +6,11 @@ enum MainSection: Hashable {
     case keyboard, favorites, behaviour, settings
 }
 
-/// Main window: sidebar + the selected section, in Wallpy's dark style.
+/// Main window: sidebar + the selected section, in Wallpy's style and the chosen theme.
 struct MainView: View {
     @State private var section: MainSection = .keyboard
     @ObservedObject private var localizer = Localizer.shared
+    @ObservedObject private var settings = Settings.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -25,11 +26,12 @@ struct MainView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .id(localizer.language)
+        // Texts and `Theme` colours are read while building the views: rebuild when either changes.
+        .id(localizer.language.rawValue + "/" + settings.theme.rawValue)
         .background(Theme.window)
         .foregroundStyle(Theme.text)
         .font(.system(size: 13))
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(Theme.isDark ? .dark : .light)
         .tint(Theme.accent)
         .frame(minWidth: 1100, minHeight: 640)
     }
@@ -49,7 +51,7 @@ private struct Sidebar: View {
                     .fill(Theme.accentFill)
                     .frame(width: 28, height: 28)
                     .overlay {
-                        Image(systemName: "command").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        Image(systemName: "command").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     }
                 Text("Atajoly").font(.system(size: 16, weight: .semibold))
             }
@@ -110,10 +112,10 @@ private struct Sidebar: View {
                 Text(title).fontWeight(selected ? .medium : .regular)
                 Spacer()
                 if let count, count > 0 {
-                    Text("\(count)").font(.system(size: 11)).foregroundStyle(selected ? Color(hex: 0xA9B8DD) : Theme.text3)
+                    Text("\(count)").font(.system(size: 11)).foregroundStyle(selected ? Theme.navSelectedCount : Theme.text3)
                 }
             }
-            .foregroundStyle(selected ? .white : Color(hex: 0xC7C7CC))
+            .foregroundStyle(selected ? Theme.navSelectedText : Theme.navText)
             .padding(.horizontal, 10)
             .frame(height: 34)
             .background(selected ? Theme.navSelected : .clear, in: RoundedRectangle(cornerRadius: 7))
@@ -774,16 +776,36 @@ private struct SettingsPane: View {
         VStack(spacing: 0) {
             PaneHeader(title: tr("Ajustes"))
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 20) {
-                    languageCard
-                    generalCard
-                    updatesCard
-                    helpCard
+                VStack(spacing: 20) {
+                    themeCard
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        languageCard
+                        generalCard
+                        updatesCard
+                        helpCard
+                    }
                 }
                 .padding(24)
                 .frame(maxWidth: 1180)
             }
         }
+    }
+
+    private var themeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("Tema")).font(.system(size: 14, weight: .semibold))
+                Text(tr("Colores de la ventana y del mapa de teclas en pantalla"))
+                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                ForEach(ThemeID.allCases) { theme in
+                    ThemeTile(theme: theme, selected: theme == settings.theme) { settings.theme = theme }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .atajolyCard()
     }
 
     private var languageCard: some View {
@@ -852,5 +874,58 @@ private struct SettingsPane: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .atajolyCard()
+    }
+}
+
+/// One theme in the picker: a miniature of its window (background, card, text and accent) and its name.
+private struct ThemeTile: View {
+    let theme: ThemeID
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let palette = theme.palette
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(verbatim: "Aa").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.text)
+                        Capsule().fill(palette.text2).frame(width: 44, height: 3)
+                        Capsule().fill(palette.text3).frame(width: 28, height: 3)
+                    }
+                    Spacer(minLength: 0)
+                    Circle().fill(palette.accent).frame(width: 14, height: 14)
+                }
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(palette.card, in: RoundedRectangle(cornerRadius: 5))
+                .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(palette.line) }
+                .padding(7)
+                .background(palette.window, in: RoundedRectangle(cornerRadius: 7))
+                .overlay { RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.lineStrong) }
+
+                HStack(spacing: 6) {
+                    Text(verbatim: theme.name)
+                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill").font(.system(size: 12)).foregroundStyle(Theme.accentText)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .padding(8)
+            .background(selected ? Theme.accentSoft : Theme.field, in: RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10).strokeBorder(selected ? Theme.accent : Theme.line, lineWidth: selected ? 1.5 : 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(theme.name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

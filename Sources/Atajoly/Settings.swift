@@ -93,6 +93,13 @@ final class Settings: ObservableObject {
     /// Apps pinned to the top of the key map, opened with a click while the trigger is held.
     @Published var favorites: [AppRef] { didSet { save(favorites, "favorites") } }
     @Published var showFavorites: Bool { didSet { defaults.set(showFavorites, forKey: "showFavorites") } }
+    /// Colour theme of the window and the on-screen panel.
+    @Published var theme: ThemeID {
+        didSet {
+            defaults.set(theme.rawValue, forKey: "theme")
+            Theme.apply(theme)
+        }
+    }
 
     private init() {
         defaults.register(defaults: [
@@ -132,6 +139,8 @@ final class Settings: ObservableObject {
         favorites = defaults.data(forKey: "favorites")
             .flatMap { try? JSONDecoder().decode([AppRef].self, from: $0) } ?? []
         showFavorites = defaults.bool(forKey: "showFavorites")
+        theme = defaults.string(forKey: "theme").flatMap(ThemeID.init(rawValue:)) ?? .atajoly
+        Theme.apply(theme)
     }
 
     /// Assign `app` to `key`, taking the key away from any other app first.

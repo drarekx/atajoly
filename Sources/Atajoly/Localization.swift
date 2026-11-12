@@ -159,6 +159,8 @@ private enum Translations {
 
         // Settings
         "Idioma": "Language",
+        "Tema": "Theme",
+        "Colores de la ventana y del mapa de teclas en pantalla": "Colors of the window and of the on-screen key map",
         "General": "General",
         "Ocultar el icono de la barra de menú": "Hide the menu bar icon",
         "Para volver aquí, abre Atajoly otra vez desde Aplicaciones": "To come back here, open Atajoly again from Applications",
@@ -320,6 +322,8 @@ private enum Translations {
 
         // Settings
         "Idioma": "Idioma",
+        "Tema": "Tema",
+        "Colores de la ventana y del mapa de teclas en pantalla": "Colors de la finestra i del mapa de tecles en pantalla",
         "General": "General",
         "Ocultar el icono de la barra de menú": "Amaga la icona de la barra de menús",
         "Para volver aquí, abre Atajoly otra vez desde Aplicaciones": "Per tornar aquí, obre Atajoly un altre cop des d'Aplicacions",

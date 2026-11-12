@@ -30,12 +30,13 @@ Requisitos: macOS 14 (Sonoma) o posterior. Apple Silicon o Intel. Si usas rcmd, 
 - **Letras automáticas**: cada app abierta tiene la letra de su nombre («Google Chrome» va a la C). Si varias comparten letra, la más usada va primero.
 - **Asignaciones a mano**: una tecla para una app concreta, aunque no esté abierta (se abre al pulsar). Cada una con su acción para cuando ya está delante.
 - **Teclado visual** con el icono de cada tecla, adaptado a tu distribución (QWERTY, AZERTY…). Desde ahí se asigna, se desactiva una tecla (para que ⌘ derecho + C siga copiando, por ejemplo) o se quita una app de las letras automáticas.
-- **Mapa de teclas** en pantalla al mantener ⌘ derecho, compacto o amplio. Con ⌘ derecho pulsado, un clic en cualquier icono abre esa app.
+- **Mapa de teclas** en pantalla al mantener ⌘ derecho, compacto o amplio. Con ⌘ derecho pulsado, un clic en cualquier icono abre esa app. Aparece y se va con una breve transición (la caja se funde y se enfoca) (un simple fundido si está activado «Reducir movimiento»).
 - **Favoritas**: una fila de apps encima del mapa de teclas, como un lanzador. Se eligen y ordenan en la sección Favoritas de la ventana, aunque no estén abiertas (se abren al hacer clic).
 - **Elegir entre varias apps**: si una letra tiene varias apps, al mantenerla pulsada (tiempo ajustable) sale una lista como la de ⌘⇥. Se queda abierta aunque sueltes las teclas: la letra o las flechas para moverte, 1–9, ↩ o un clic para abrir, esc (o un clic fuera) para cerrar.
 - Se puede usar **⌥ derecho** en lugar de ⌘ derecho.
 - **Sin permisos** para cambiar de app. Solo «pasar a la siguiente ventana» pide Accesibilidad.
 - **Idiomas**: castellano, inglés y catalán.
+- **Temas**: el aspecto propio de Atajoly o una paleta conocida (Solarized Dark, Solarized Light, Dracula, Nord, Gruvbox Dark, Catppuccin Mocha, Tokyo Night, One Dark, Monokai). Se elige en Ajustes y cambia al momento la ventana y el mapa de teclas.
 
 ## Dónde guarda las cosas
 
