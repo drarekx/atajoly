@@ -4,12 +4,24 @@ import SwiftUI
 /// Floating overlay: the favorites and key map while the trigger is held, the chooser for a
 /// letter shared by several apps, or a short confirmation after assigning a key.
 /// Never takes focus, but the map and the chooser take clicks.
+///
+/// It comes and goes through a short fog transition. The window is larger than the card by
+/// `Fog.margin` on every side so the mist has room; the card stays centred where it always was.
 @MainActor
 final class SwitcherPanel {
     static let shared = SwitcherPanel()
 
     private var panel: NSPanel?
     private var hideTask: DispatchWorkItem?
+    private let stage = FogStage()
+    private let clock = FogClock()
+    /// Where the overlay is heading: `true` from `present` until the next `hide`.
+    /// The window itself stays on screen a little longer, until the dissolve ends.
+    private var isShown = false
+    private var clickable = false
+    /// The card in screen coordinates; the rest of the window is transparent margin.
+    private var cardFrame = NSRect.zero
+    private var mouseMonitors: [Any] = []
 
     /// Key map with the favorites on top. Clickable: a click opens that app.
     func show() {
@@ -41,26 +53,47 @@ final class SwitcherPanel {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: task)
     }
 
+    /// Dissolves the overlay. Safe to call when nothing is shown or while it is already leaving.
     func hide() {
         hideTask?.cancel()
-        panel?.orderOut(nil)
+        guard isShown, let panel else { return }
+        isShown = false
+        stopTrackingMouse()
+        panel.ignoresMouseEvents = true
+        let plain = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        clock.run(to: 0, duration: plain ? Fog.plainDisappear : Fog.disappear, plain: plain) { [weak self] in
+            // Only reached when the dissolve ran to the end: a new `present` drops this completion.
+            guard let self, !self.isShown else { return }
+            self.panel?.orderOut(nil)
+        }
     }
 
     private func present(_ view: AnyView, clickable: Bool = false) {
         hideTask?.cancel()
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        panel.ignoresMouseEvents = !clickable
-        let hosting = FirstClickHostingView(rootView: view
+        let content = AnyView(view
             .environment(\.colorScheme, .dark)
-            .id(Localizer.shared.language))
-        panel.contentView = hosting
-        let size = hosting.fittingSize
+            .id(Localizer.shared.language)
+            .environmentObject(clock))
+        // Measured on a throwaway host: the live one may not have laid out the new content yet.
+        let size = NSHostingView(rootView: content).fittingSize
+        stage.content = content
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         let frame = screen?.visibleFrame ?? .zero
-        panel.setFrame(NSRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2,
-                              width: size.width, height: size.height), display: true)
+        cardFrame = NSRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2,
+                           width: size.width, height: size.height)
+        panel.setFrame(cardFrame.insetBy(dx: -Fog.margin, dy: -Fog.margin), display: true)
+        self.clickable = clickable
+        if clickable { startTrackingMouse() } else { stopTrackingMouse() }
+        updateMousePassthrough()
         panel.orderFrontRegardless()
+        // Already there (or on its way in): the content was swapped, nothing to replay.
+        guard !isShown else { return }
+        isShown = true
+        // Starts from wherever the clock is: 0 when hidden, part-way when a dissolve was running.
+        let plain = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        clock.run(to: 1, duration: plain ? Fog.plainAppear : Fog.appear, plain: plain)
     }
 
     private func makePanel() -> NSPanel {
@@ -69,17 +102,262 @@ final class SwitcherPanel {
         panel.level = .popUpMenu
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        // The window shadow follows the window's shape, not the fading card: the card draws its own.
+        panel.hasShadow = false
         panel.ignoresMouseEvents = true
+        panel.acceptsMouseMovedEvents = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        let hosting = FogHostingView(rootView: FogRoot(stage: stage, clock: clock))
+        hosting.sizingOptions = []
+        hosting.onMouse = { [weak self] in self?.updateMousePassthrough() }
+        panel.contentView = hosting
         return panel
+    }
+
+    // MARK: Click-through margin
+
+    /// The window takes clicks only while the pointer is over the card, so the transparent
+    /// margin (and a dissolving or click-less overlay) never swallows a click meant for below.
+    private func updateMousePassthrough() {
+        guard let panel else { return }
+        let ignores = !(clickable && isShown && cardFrame.contains(NSEvent.mouseLocation))
+        if panel.ignoresMouseEvents != ignores { panel.ignoresMouseEvents = ignores }
+    }
+
+    private func startTrackingMouse() {
+        guard mouseMonitors.isEmpty else { return }
+        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        let global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateMousePassthrough() }
+        }
+        let local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            MainActor.assumeIsolated { self?.updateMousePassthrough() }
+            return event
+        }
+        mouseMonitors = [global, local].compactMap { $0 }
+    }
+
+    private func stopTrackingMouse() {
+        mouseMonitors.forEach(NSEvent.removeMonitor)
+        mouseMonitors = []
     }
 }
 
-/// Hosting view that acts on the first click, though the panel never becomes key.
-private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+// MARK: - Fog transition
+
+private enum Fog {
+    /// Transparent room around the card for the mist and the card's shadow.
+    static let margin: CGFloat = 56
+    static let appear = 0.22
+    static let disappear = 0.18
+    /// Reduce Motion: a plain quick fade.
+    static let plainAppear = 0.10
+    static let plainDisappear = 0.08
+
+    /// Stable pseudo-random value in 0..<1, so the mist keeps its shape from frame to frame.
+    static func noise(_ index: Int, _ salt: Int) -> Double {
+        let value = sin(Double(index) * 12.9898 + Double(salt) * 78.233) * 43758.5453
+        return value - value.rounded(.down)
+    }
+
+    /// Point on the edge of `rect`, `fraction` (0..<1) of the way around it.
+    static func point(on rect: CGRect, at fraction: Double) -> CGPoint {
+        var distance = fraction * 2 * (rect.width + rect.height)
+        if distance < rect.width { return CGPoint(x: rect.minX + distance, y: rect.minY) }
+        distance -= rect.width
+        if distance < rect.height { return CGPoint(x: rect.maxX, y: rect.minY + distance) }
+        distance -= rect.height
+        if distance < rect.width { return CGPoint(x: rect.maxX - distance, y: rect.maxY) }
+        distance -= rect.width
+        return CGPoint(x: rect.minX, y: rect.maxY - distance)
+    }
+}
+
+/// What the overlay shows. Kept apart from the clock so a frame of the transition
+/// does not rebuild the content.
+@MainActor
+private final class FogStage: ObservableObject {
+    @Published var content = AnyView(EmptyView())
+}
+
+/// Timeline of the transition: 0 = gone (all drifted away), 1 = fully in view.
+/// Driven by hand rather than by SwiftUI animations so that reversing half-way, and knowing
+/// exactly when the dissolve has ended, are both trivial.
+@MainActor
+private final class FogClock: ObservableObject {
+    @Published private(set) var progress = 0.0
+    /// Reduce Motion: fade only, no mist, blur or scale.
+    @Published private(set) var plain = false
+
+    private var timer: Timer?
+    private var completion: (() -> Void)?
+    private var from = 0.0
+    private var to = 0.0
+    private var start: CFTimeInterval = 0
+    private var duration = 0.0
+
+    /// Moves from the current value to `target`. Replaces any run in flight, whose completion
+    /// is dropped. `duration` is for the whole 0…1 range; a partial run takes its share.
+    func run(to target: Double, duration full: Double, plain: Bool, completion: (() -> Void)? = nil) {
+        timer?.invalidate()
+        timer = nil
+        if self.plain != plain { self.plain = plain }
+        self.completion = completion
+        from = progress
+        to = target
+        let distance = abs(to - from)
+        guard distance > 0.001, full > 0 else { return finish() }
+        duration = full * distance
+        start = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func tick() {
+        let time = min(1, (CACurrentMediaTime() - start) / duration)
+        // Ease-out when appearing, ease-in when dissolving.
+        let eased = to > from ? 1 - pow(1 - time, 3) : time * time
+        progress = from + (to - from) * eased
+        if time >= 1 { finish() }
+    }
+
+    private func finish() {
+        timer?.invalidate()
+        timer = nil
+        if progress != to { progress = to }
+        let done = completion
+        completion = nil
+        done?()
+    }
+}
+
+/// Mist behind and around the card, the card itself centred on top.
+private struct FogRoot: View {
+    @ObservedObject var stage: FogStage
+    let clock: FogClock
+
+    var body: some View {
+        ZStack {
+            Mist(clock: clock)
+            stage.content.modifier(FogEmerge(clock: clock))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+    }
+}
+
+/// The card as a whole: fades and settles into place.
+private struct FogEmerge: ViewModifier {
+    @ObservedObject var clock: FogClock
+
+    func body(content: Content) -> some View {
+        let progress = clock.progress
+        content
+            .opacity(clock.plain ? progress : min(1, progress * 1.4))
+            .scaleEffect(clock.plain ? 1 : 0.975 + 0.025 * progress)
+    }
+}
+
+/// Soft puffs along the card's edge. Densest early in the timeline and gone at both ends, and
+/// further out the lower the progress: appearing, they gather inwards and clear; dissolving,
+/// they rise as the card fades, drift outwards and thin out.
+private struct Mist: View {
+    @ObservedObject var clock: FogClock
+
+    var body: some View {
+        let progress = clock.progress
+        if clock.plain || progress <= 0 || progress >= 1 {
+            Color.clear
+        } else {
+            Canvas { context, size in
+                let card = CGRect(origin: .zero, size: size).insetBy(dx: Fog.margin, dy: Fog.margin)
+                guard card.width > 0, card.height > 0 else { return }
+                let density = sin(.pi * pow(progress, 0.6))
+                let away = 1 - progress
+                let count = max(10, min(32, Int((card.width + card.height) / 28)))
+                for index in 0..<count {
+                    let a = Fog.noise(index, 1), b = Fog.noise(index, 2), c = Fog.noise(index, 3)
+                    let edge = Fog.point(on: card, at: (Double(index) + a * 0.6) / Double(count))
+                    let dx = edge.x - card.midX, dy = edge.y - card.midY
+                    let length = max(1, hypot(dx, dy))
+                    let drift = away * (6 + 10 * b)
+                    let width = 36 + 24 * b, height = 26 + 16 * c
+                    let puff = CGRect(x: edge.x + dx / length * drift - width / 2,
+                                      y: edge.y + dy / length * drift - away * 4 * c - height / 2,
+                                      width: width, height: height)
+                    // Mostly the card's own substance, with a few wisps of the text colour so the
+                    // mist shows against the desktop whether the palette is dark or light.
+                    let wisp = index % 3 == 0
+                    let tint = wisp ? Theme.text : Theme.window
+                    let alpha = density * (wisp ? 0.14 + 0.10 * a : 0.38 + 0.22 * a)
+                    context.fill(Path(ellipseIn: puff), with: .color(tint.opacity(alpha)))
+                }
+            }
+            .blur(radius: 10)
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+/// Shared look of the overlay cards. The content inside sharpens as the fog clears; the
+/// material behind it is left unfiltered and only fades with the card.
+private struct FogCard: ViewModifier {
+    let radius: CGFloat
+    @EnvironmentObject private var clock: FogClock
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius)
+        content
+            .blur(radius: clock.plain ? 0 : (1 - clock.progress) * 6)
+            .background(.ultraThinMaterial, in: shape)
+            .background(Theme.window.opacity(0.6), in: shape)
+            .overlay { shape.strokeBorder(Theme.lineStrong) }
+            .foregroundStyle(Theme.text)
+            .background {
+                // Stands in for the window shadow, which the oversized window no longer has.
+                shape.fill(Color(nsColor: .shadowColor).opacity(0.3))
+                    .blur(radius: 14)
+                    .offset(y: 6)
+            }
+    }
+}
+
+/// Hosting view that acts on the first click, though the panel never becomes key, and reports
+/// pointer movement over the window (the event monitors miss it in some activation states).
+private final class FogHostingView: NSHostingView<FogRoot> {
+    var onMouse: (() -> Void)?
+    private var area: NSTrackingArea?
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area { removeTrackingArea(area) }
+        let area = NSTrackingArea(rect: .zero,
+                                  options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area)
+        self.area = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onMouse?()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        onMouse?()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onMouse?()
+    }
 }
 
 /// Apps behind one letter and the one picked so far.
@@ -141,10 +419,7 @@ private struct SwitcherView: View {
             }
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .background(Theme.window.opacity(0.6), in: RoundedRectangle(cornerRadius: 18))
-        .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.lineStrong) }
-        .foregroundStyle(Theme.text)
+        .modifier(FogCard(radius: 18))
     }
 
     /// Dock-like row: icon, name, and a dot under the apps that are running.
@@ -280,10 +555,7 @@ private struct ChooserView: View {
                 .foregroundStyle(Theme.text3)
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .background(Theme.window.opacity(0.6), in: RoundedRectangle(cornerRadius: 18))
-        .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.lineStrong) }
-        .foregroundStyle(Theme.text)
+        .modifier(FogCard(radius: 18))
     }
 }
 
@@ -305,9 +577,6 @@ private struct FlashView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .background(Theme.window.opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.lineStrong) }
-        .foregroundStyle(Theme.text)
+        .modifier(FogCard(radius: 16))
     }
 }
