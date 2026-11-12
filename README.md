@@ -36,6 +36,7 @@ Requisitos: macOS 14 (Sonoma) o posterior. Apple Silicon o Intel. Si usas rcmd, 
 - Se puede usar **⌥ derecho** en lugar de ⌘ derecho.
 - **Sin permisos** para cambiar de app. Solo «pasar a la siguiente ventana» pide Accesibilidad.
 - **Idiomas**: castellano, inglés y catalán.
+- **Temas**: el aspecto propio de Atajoly o una paleta conocida (Solarized Dark, Solarized Light, Dracula, Nord, Gruvbox Dark, Catppuccin Mocha, Tokyo Night, One Dark, Monokai). Se elige en Ajustes y cambia al momento la ventana y el mapa de teclas.
 
 ## Dónde guarda las cosas
 
