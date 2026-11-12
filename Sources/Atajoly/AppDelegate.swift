@@ -126,8 +126,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.title = "Atajoly"
             window.isReleasedWhenClosed = false
             window.minSize = NSSize(width: 1100, height: 640)
-            window.appearance = NSAppearance(named: .darkAqua)
-            window.backgroundColor = NSColor(red: 0x12 / 255, green: 0x12 / 255, blue: 0x14 / 255, alpha: 1)
             window.titlebarAppearsTransparent = true
             let hosting = NSHostingController(rootView: MainView())
             hosting.sizingOptions = []
@@ -135,6 +133,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.setContentSize(size)
             window.center()
             mainWindow = window
+            // Emits the current theme now and every later choice (before `Theme` itself changes,
+            // hence the palette taken from the value).
+            Settings.shared.$theme
+                .sink { [weak window] theme in
+                    let palette = theme.palette
+                    window?.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)
+                    window?.backgroundColor = NSColor(palette.window)
+                }
+                .store(in: &cancellables)
         }
         NSApp.activate(ignoringOtherApps: true)
         mainWindow?.makeKeyAndOrderFront(nil)
