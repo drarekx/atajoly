@@ -73,7 +73,7 @@ final class SwitcherPanel {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         let content = AnyView(view
-            .environment(\.colorScheme, .dark)
+            .environment(\.colorScheme, Theme.isDark ? .dark : .light)
             .id(Localizer.shared.language)
             .environmentObject(clock))
         // Measured on a throwaway host: the live one may not have laid out the new content yet.
